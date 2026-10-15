@@ -166,7 +166,7 @@ C compiler for the test programs. x86-64 Linux is what we build and test.
 The release build compiles every target and took 4 minutes 7 seconds with three
 jobs on a 12-thread machine (2026-10-15, fresh clone). The packaging notes record
 about 4 GB of memory at the default job count, so use `-j 2` on small machines.
-Some tests need `clang` and `gcc`; `install-test-deps.sh` lists the packages.
+Some tests need `clang` and `gcc`; `install-test-deps.sh` installs the packages the tests need.
 
 ## Known limits
 
