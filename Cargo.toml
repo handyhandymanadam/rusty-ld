@@ -1,0 +1,51 @@
+# The ELF linker in elf/ is generic over the target. Instantiating it for
+# all twenty targets in one crate keeps the compiler on a single core for
+# minutes, so each target is instantiated in a crate of its own under
+# arch/, and the executable in cli/ dispatches to them.
+[workspace]
+resolver = "3"
+members = ["cli", "common", "elf", "macho", "arch/*", "tests"]
+
+[workspace.package]
+version = "3.0.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/rui314/mold"
+
+# The workspace crates are published together and depend on each other's
+# internals, so each one requires the exact version of the others. Keep
+# these versions equal to the workspace version above.
+[workspace.dependencies]
+libc = "0.2"
+mold-common = { path = "common", version = "=3.0.0" }
+mold-elf = { path = "elf", version = "=3.0.0" }
+mold-elf-x86_64 = { path = "arch/elf-x86_64", version = "=3.0.0" }
+mold-elf-i386 = { path = "arch/elf-i386", version = "=3.0.0" }
+mold-elf-arm32 = { path = "arch/elf-arm32", version = "=3.0.0" }
+mold-elf-arm32be = { path = "arch/elf-arm32be", version = "=3.0.0" }
+mold-elf-arm64 = { path = "arch/elf-arm64", version = "=3.0.0" }
+mold-elf-arm64be = { path = "arch/elf-arm64be", version = "=3.0.0" }
+mold-elf-riscv64 = { path = "arch/elf-riscv64", version = "=3.0.0" }
+mold-elf-riscv64be = { path = "arch/elf-riscv64be", version = "=3.0.0" }
+mold-elf-riscv32 = { path = "arch/elf-riscv32", version = "=3.0.0" }
+mold-elf-riscv32be = { path = "arch/elf-riscv32be", version = "=3.0.0" }
+mold-elf-ppc64v2 = { path = "arch/elf-ppc64v2", version = "=3.0.0" }
+mold-elf-ppc32 = { path = "arch/elf-ppc32", version = "=3.0.0" }
+mold-elf-ppc64v1 = { path = "arch/elf-ppc64v1", version = "=3.0.0" }
+mold-elf-s390x = { path = "arch/elf-s390x", version = "=3.0.0" }
+mold-elf-sparc64 = { path = "arch/elf-sparc64", version = "=3.0.0" }
+mold-elf-m68k = { path = "arch/elf-m68k", version = "=3.0.0" }
+mold-elf-sh4 = { path = "arch/elf-sh4", version = "=3.0.0" }
+mold-elf-sh4be = { path = "arch/elf-sh4be", version = "=3.0.0" }
+mold-elf-loongarch64 = { path = "arch/elf-loongarch64", version = "=3.0.0" }
+mold-elf-loongarch32 = { path = "arch/elf-loongarch32", version = "=3.0.0" }
+mold-macho = { path = "macho", version = "=3.0.0" }
+mold-macho-arm64 = { path = "arch/macho-arm64", version = "=3.0.0" }
+mold-macho-x86_64 = { path = "arch/macho-x86_64", version = "=3.0.0" }
+
+[profile.release]
+panic = "abort"
+# Copying generic and inline functions once per crate instead of once per
+# codegen unit makes the executable about a quarter smaller.
+codegen-units = 1

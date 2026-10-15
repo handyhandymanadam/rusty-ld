@@ -1,0 +1,21 @@
+# rustc's LoongArch targets use the medium code model, but the cc crate
+# compiles C code with the C compiler's default normal code model, whose
+# direct calls reach only ±128 MiB, unless -Ccode-model is given
+# explicitly. A debug build of mold has more text than that, so we pass
+# the model explicitly to make the cc crate pass -mcmodel=medium.
+[target.'cfg(target_arch = "loongarch64")']
+rustflags = ["-Ccode-model=medium"]
+
+# LLVM's address-significance table tells the linker which symbols'
+# addresses the program uses. Without it, Identical Code Folding (see
+# cli/build.rs) has to assume that every piece of read-only data has a
+# significant address, so it can't merge two functions that refer to
+# identical constants, such as the panic locations that each crate
+# instantiating the linker has its own copies of.
+[target.'cfg(all())']
+rustflags = ["-Cllvm-args=-addrsig"]
+
+# Rust links musl statically by default, but a static executable can't
+# dlopen() the LTO plugin.
+[target.'cfg(target_env = "musl")']
+rustflags = ["-Ctarget-feature=-crt-static"]

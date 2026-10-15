@@ -1,0 +1,7 @@
+/target
+/out
+/dist
+/bench
+/.codex
+*~
+__pycache__/
