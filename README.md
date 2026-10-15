@@ -1,333 +1,192 @@
-# mold: A Modern Linker
-
-mold is a high-performance drop-in replacement for existing Unix linkers,
-designed to speed up builds. In our August 2026 benchmarks, it links 4.9x
-faster than [LLVM lld](https://lld.llvm.org) and 1.9x faster than
-[wild](https://github.com/wild-linker/wild) at the median; see
-[Benchmark](#benchmark) for the full results.
-
-mold is written by the original developer of LLVM lld, the linker that
-Android, Chrome, FreeBSD, PlayStation, Nintendo Switch, and other production
-systems are built with. mold started as an effort to build an even faster
-linker from scratch, free of the architectural limits its author had run into
-while optimizing lld. It has been in production use since 2021, and today it
-is the default linker of many large open-source projects and is used
-internally by many companies.
-
-mold supports x86-64, i386, ARM 32/64, RISC-V 32/64, PowerPC 32/64, s390x,
-LoongArch 32/64, SPARC64, m68k, and SH-4.
-
-## Why does linking speed matter?
-
-If you are using a compiled language such as C, C++, or Rust, a build consists
-of two phases. In the first phase, a compiler compiles source files into
-object files (`.o` files). In the second phase, a linker takes all object
-files and combines them into a single executable or shared library file.
-
-The second phase can be time-consuming if your build output is large. mold can
-speed up this process, saving you time and preventing distractions while
-waiting for a lengthy build to finish. The difference is most noticeable
-during rapid debug-edit-rebuild cycles.
-
-## Benchmark
-
-Here is a performance comparison of lld, wild, and mold when linking nine
-large programs on two machines:
-
-- AMD Ryzen Threadripper 7980X (64 cores) running Ubuntu 24.04
-- Apple M1 Ultra (16 performance cores and 4 efficiency cores) running Fedora
-  Asahi Remix 42; the benchmark is restricted to the performance cores
-
-The Threadripper represents many-core workstation and server processors, and
-the M1 Ultra represents high-performance desktop processors.
-
-All three linkers were built from source in release configuration as of
-2026-08-28 and ran with their default options. Times are wall-clock times as
-seen by the caller, the median of three runs after a warm-up. The ARM64 rows
-are the ARM64 builds of the same programs. The benchmark suite, including all
-linker inputs, is available on [Zenodo](https://zenodo.org/records/21882261).
-
-**AMD Ryzen Threadripper 7980X, debug builds**
-
-| Program (output size)             | lld    | wild  | mold  | wild/mold | lld/mold
-|-----------------------------------|--------|-------|-------|-----------|---------
-| Blender 5.2 (2.46 GiB)            | 4.72s  | 1.98s | 0.86s | 2.3x      | 5.5x
-| Chromium 145 (4.51 GiB)           | 16.64s | 3.98s | 1.65s | 2.4x      | 10.1x
-| Chromium 145 ARM64 (4.76 GiB)     | 20.91s | N/A   | 1.83s | N/A       | 11.4x
-| Clang 21 (4.19 GiB)               | 6.19s  | 3.71s | 1.34s | 2.8x      | 4.6x
-| ClickHouse 26.1 (5.58 GiB)        | 6.62s  | 4.40s | 0.98s | 4.5x      | 6.7x
-| Firefox 149 (2.37 GiB)            | 5.11s  | N/A   | 0.78s | N/A       | 6.5x
-| Firefox 149 ARM64 (2.43 GiB)      | 6.40s  | N/A   | 0.93s | N/A       | 6.9x
-| Godot 4.6 (1.01 GiB)              | 1.77s  | 1.08s | 0.46s | 2.3x      | 3.8x
-| LibreOffice 26.2 (0.98 GiB)       | 3.46s  | 1.41s | 0.44s | 3.2x      | 7.9x
-| PyTorch 2.9 (3.51 GiB)            | 4.35s  | 2.48s | 0.80s | 3.1x      | 5.4x
-| TensorFlow 2.21 (9.55 GiB)        | 50.73s | N/A   | 3.15s | N/A       | 16.1x
-
-**AMD Ryzen Threadripper 7980X, release builds**
-
-| Program (output size)             | lld   | wild  | mold  | wild/mold | lld/mold
-|-----------------------------------|-------|-------|-------|-----------|---------
-| Blender 5.2 (0.24 GiB)            | 0.85s | 0.30s | 0.20s | 1.5x      | 4.2x
-| Chromium 145 (0.58 GiB)           | 6.48s | N/A   | 0.64s | N/A       | 10.2x
-| Chromium 145 ARM64 (0.60 GiB)     | 7.91s | N/A   | 0.73s | N/A       | 10.8x
-| Clang 21 (0.21 GiB)               | 0.53s | 0.23s | 0.11s | 2.2x      | 5.0x
-| ClickHouse 26.1 (1.23 GiB)        | 3.18s | 2.07s | 0.41s | 5.0x      | 7.7x
-| Firefox 149 (0.22 GiB)            | 1.01s | 0.41s | 0.21s | 2.0x      | 4.9x
-| Godot 4.6 (0.15 GiB)              | 0.44s | 0.21s | 0.08s | 2.7x      | 5.8x
-| LibreOffice 26.2 (0.19 GiB)       | 1.13s | 0.57s | 0.19s | 3.0x      | 6.0x
-| PyTorch 2.9 (0.31 GiB)            | 0.68s | 0.32s | 0.15s | 2.2x      | 4.7x
-| TensorFlow 2.21 (0.73 GiB)        | 9.62s | N/A   | 0.70s | N/A       | 13.7x
-
-**Apple M1 Ultra, debug builds**
-
-| Program (output size)             | lld    | wild  | mold  | wild/mold | lld/mold
-|-----------------------------------|--------|-------|-------|-----------|---------
-| Blender 5.2 (2.46 GiB)            | 3.21s  | 1.81s | 1.56s | 1.2x      | 2.1x
-| Chromium 145 (4.51 GiB)           | 9.54s  | 3.49s | 2.22s | 1.6x      | 4.3x
-| Chromium 145 ARM64 (4.76 GiB)     | 12.67s | N/A   | 2.31s | N/A       | 5.5x
-| Clang 21 (4.19 GiB)               | 4.40s  | 2.78s | 2.96s | 0.9x      | 1.5x
-| ClickHouse 26.1 (5.58 GiB)        | 4.92s  | 3.50s | 1.71s | 2.1x      | 2.9x
-| Firefox 149 (2.37 GiB)            | 3.21s  | N/A   | 1.12s | N/A       | 2.9x
-| Firefox 149 ARM64 (2.43 GiB)      | 4.13s  | N/A   | 1.12s | N/A       | 3.7x
-| Godot 4.6 (1.01 GiB)              | 1.12s  | 0.81s | 0.62s | 1.3x      | 1.8x
-| LibreOffice 26.2 (0.98 GiB)       | 2.08s  | 0.94s | 0.63s | 1.5x      | 3.3x
-| PyTorch 2.9 (3.51 GiB)            | 3.07s  | 2.10s | 1.45s | 1.4x      | 2.1x
-| TensorFlow 2.21 (9.55 GiB)        | 43.68s | N/A   | 4.43s | N/A       | 9.9x
-
-**Apple M1 Ultra, release builds**
-
-| Program (output size)             | lld   | wild  | mold  | wild/mold | lld/mold
-|-----------------------------------|-------|-------|-------|-----------|---------
-| Blender 5.2 (0.24 GiB)            | 0.56s | 0.20s | 0.25s | 0.8x      | 2.3x
-| Chromium 145 (0.58 GiB)           | 4.25s | N/A   | 0.78s | N/A       | 5.5x
-| Chromium 145 ARM64 (0.60 GiB)     | 5.17s | N/A   | 0.91s | N/A       | 5.7x
-| Clang 21 (0.21 GiB)               | 0.30s | 0.15s | 0.14s | 1.0x      | 2.1x
-| ClickHouse 26.1 (1.23 GiB)        | 1.94s | 0.95s | 0.55s | 1.7x      | 3.5x
-| Firefox 149 (0.22 GiB)            | 0.56s | 0.23s | 0.20s | 1.1x      | 2.7x
-| Godot 4.6 (0.15 GiB)              | 0.26s | 0.11s | 0.11s | 1.0x      | 2.3x
-| LibreOffice 26.2 (0.19 GiB)       | 0.62s | 0.30s | 0.23s | 1.3x      | 2.7x
-| PyTorch 2.9 (0.31 GiB)            | 0.43s | 0.22s | 0.17s | 1.3x      | 2.5x
-| TensorFlow 2.21 (0.73 GiB)        | 8.07s | N/A   | 0.68s | N/A       | 11.9x
-
-N/A indicates that the linker cannot link that program. wild's Chromium
-release links are also marked N/A because wild does not implement `--icf=all`
-and links without identical code folding.
-
-## Why is mold so fast?
-
-mold owes its speed to pervasive parallelism and to efficient data structures
-and algorithms. For details, read our paper "mold: A Massively Parallel
-Linker" (ASPLOS 2027), available at https://arxiv.org/abs/2608.23228.
-
-## Installation
-
-Binary packages for the following systems are currently available:
-
-[![Packaging status](https://repology.org/badge/vertical-allrepos/mold.svg)](https://repology.org/project/mold/versions)
-
-Prebuilt binaries for Linux on x86-64, ARM64, ARM32, RISC-V, PPC64LE, s390x,
-and LoongArch are also attached to each
-[GitHub release](https://github.com/rui314/mold/releases).
-
-## How to Build
-
-mold is written in Rust and built with Cargo. It requires Rust 1.95 or later;
-if your system's Rust is older, install the stable toolchain with
-[rustup](https://rustup.rs/). You also need Git and a C compiler such as GCC or
-Clang, which you can install with your system's package manager.
-
-### Compile mold
-
-```shell
-git clone https://github.com/rui314/mold.git
-cd mold
-cargo build --release
-```
-
-The executable is `target/release/mold`.
-
-### Install mold
-
-Run `sudo ./install-mold.sh` to install mold under `/usr/local`. To install it
-under a different prefix, set `PREFIX`, as in
-`sudo PREFIX=/usr ./install-mold.sh`.
-
-You can also run `target/release/mold` directly without installing it.
-
-## How to use
-
-<details><summary>A classic way to use mold</summary>
-
-On Unix, the linker command (usually `/usr/bin/ld`) is indirectly invoked by
-the compiler driver (typically `cc`, `gcc`, or `clang`), which is in turn
-indirectly invoked by `make` or other build system commands.
-
-If you can specify an additional command line option for your compiler driver
-by modifying the build system's config files, add one of the following flags
-to use mold instead of `/usr/bin/ld`:
-
-- For Clang: pass `-fuse-ld=mold`
-
-- For GCC 12.1.0 or later: pass `-fuse-ld=mold`
-
-- For GCC before 12.1.0: the `-fuse-ld` option does not accept `mold` as a
-  valid argument, so you need to use the `-B` option instead. The `-B` option
-  tells GCC where to look for external commands like `ld`.
-
-  If you installed mold using the script above, there is a directory named
-  `/usr/local/libexec/mold`, and the `ld` command there is a symlink to mold.
-  Pass `-B/usr/local/libexec/mold` to GCC. If you installed under another
-  prefix, use that prefix instead.
-
-If you haven't installed `ld.mold` to any `$PATH`, you can still pass
-`-fuse-ld=/absolute/path/to/mold` to clang to use mold. However, GCC does not
-accept an absolute path as an argument for `-fuse-ld`.
-
-</details>
-
-<details><summary>If you are using Rust</summary>
-
-Create `.cargo/config.toml` in your project directory with the following:
-
-```toml
-[target.'cfg(target_os = "linux")']
-linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=/path/to/mold"]
-```
-
-where `/path/to/mold` is an absolute path to the mold executable. In the
-example above, we use `clang` as a linker driver since it always accepts the
-`-fuse-ld` option. If your GCC is recent enough to recognize the option, you
-may be able to remove the `linker = "clang"` line.
-
-```toml
-[target.'cfg(target_os = "linux")']
-rustflags = ["-C", "link-arg=-fuse-ld=mold"]
-```
-
-If you want to use mold for all projects, add the above snippet to
-`~/.cargo/config.toml`.
-
-</details>
-
-<details><summary>If you are using Nim</summary>
-
-Create `config.nims` in your project directory with the following:
-
-```nim
-when findExe("mold").len > 0 and defined(linux):
-  switch("passL", "-fuse-ld=mold")
-```
-
-where `mold` must be included in the `PATH` environment variable. In this
-example, `gcc` is used as the linker driver. Use the `-fuse-ld` option if your
-GCC is recent enough to recognize this option.
-
-If you want to use mold for all projects, add the above snippet to
-`~/.config/config.nims`.
-
-</details>
-
-<details><summary>If you are using Conan package manager</summary>
-
-You can configure [Conan](https://github.com/conan-io) to download the latest
-version of `mold` and use it as the linker when building your dependencies and
-projects from source. Please see the instructions [here](https://conan.io/center/recipes/mold).
-
-</details>
-
-<details><summary>mold -run</summary>
-
-It is sometimes very hard to pass an appropriate command line option to `cc`
-to specify an alternative linker. To address this situation, mold has a
-feature to intercept all invocations of `ld`, `ld.bfd`, `ld.lld`, or `ld.gold`
-and redirect them to itself. To use this feature, run `make` (or another build
-command) as a subcommand of mold as follows:
-
-```shell
-mold -run make <make-options-if-any>
-```
-
-Internally, mold invokes a given command with the `LD_PRELOAD` environment
-variable set to a shared object file embedded in mold. The shared object file
-intercepts all function calls to `exec(3)`-family functions to replace
-`argv[0]` with `mold` if it is `ld`, `ld.bfd`, `ld.gold`, or `ld.lld`.
-This feature is available on Linux and FreeBSD.
-
-</details>
-
-<details><summary>GitHub Actions</summary>
-
-You can use our [setup-mold](https://github.com/rui314/setup-mold) GitHub
-Action to speed up GitHub-hosted continuous builds. Although GitHub Actions
-run on a 4 core machine, mold is still significantly faster than the default
-GNU linker, especially when linking large programs.
-
-</details>
-
-<details><summary>Verify that you are using mold</summary>
-
-mold leaves its identification string in the `.comment` section of an output
-file. You can print it out to verify that you are actually using mold.
-
-```shell
-$ readelf -p .comment <executable-file>
-
-String dump of section '.comment':
-  [     0]  GCC: (Ubuntu 10.2.0-5ubuntu1~20.04) 10.2.0
-  [    2b]  mold 9a1679b47d9b22012ec7dfbda97c8983956716f7
-```
-
-If `mold` is present in the `.comment` section, the file was created by mold.
-
-</details>
-
-<details><summary>Online manual</summary>
-
-Since mold is a drop-in replacement, you should be able to use it without
-reading its manual. However, if you need it, [mold's man page](docs/mold.md)
-is available online. You can read the same manual by running `man mold`.
-
-</details>
-
-## Stability
-
-mold has been developed in the open since 2020 and has more than 140
-contributors. Its test suite, which covers every linker feature, runs in CI for
-all supported target CPU architectures, natively or under QEMU, and under ASAN
-and TSAN. Before each release, we try to build all of Gentoo Linux's roughly
-19,000 packages with mold, using GNU ld as a control, to find regressions before
-they reach a release.
-
-## Sponsors
-
-mold is free to use, but keeping it maintained is continuous work: supporting
-new architectures and toolchain features, keeping up with the projects that
-depend on it, and making it faster. That work is funded by sponsors. If mold
-saves you or your company time, please consider becoming a
-[GitHub sponsor](https://github.com/sponsors/rui314).
-
-We thank everyone who sponsors the project. In particular, we'd like to
-acknowledge the following people and organizations who have sponsored
-$128/month or more:
-
-### Corporate sponsors
-
-<a href="https://mercury.com"><img src="docs/mercury-logo.png" align=center height=120 width=400 alt=Mercury></a>
-
-<a href="https://cybozu-global.com"><img src="docs/cyboze-logo.png" align=center height=120 width=133 alt=Cybozu></a>
-
-<a href="https://www.emergetools.com"><img src="docs/emerge-tools-logo.png" align=center height=120 width=240 alt="Emerge Tools"></a><br>
-
-- [G-Research](https://www.gresearch.co.uk)
-- [Signal Slot Inc.](https://github.com/signal-slot)
-- [GlareDB](https://github.com/GlareDB)
-
-### Individual sponsors
-
-- [Wei Wu](https://github.com/lazyparser)
-- [kyle-elliott](https://github.com/kyle-elliott)
-- [Bryant Biggs](https://github.com/bryantbiggs)
-- [kraptor23](https://github.com/kraptor23)
-- [Jinkyu Yi](https://github.com/jincreator)
-- [Pedro Navarro](https://github.com/pedronavf)
+# rusty-ld
+
+rusty-ld is a fork of [mold](https://github.com/rui314/mold) 3.0.0, the Rust
+rewrite of the mold linker (ELF linker for Linux, plus a Mach-O linker in the
+same workspace). The command it builds is still called `mold`, and it links
+with the same command line as GNU ld.
+
+The fork keeps everything upstream does and adds a small number of things
+that were missing for our own use. This page says what those are, how the
+fork compares with the code it started from, how to build and install it, and
+where it falls short. For the linker's general documentation (every option,
+the man page, supported targets) read `docs/mold.md` and the upstream project.
+
+## Why this fork exists
+
+We needed a fast linker that could build a C library whose link step depends
+on behaviour GNU ld has and mold 3.0.0 lacked (a section ordering file,
+PLT marking, symbols that only a shared library defines, ifunc ordering in
+static programs). We also wanted the linker to explain itself to scripts and
+build tools: which library holds a missing symbol, where each definition of a
+duplicate symbol lives, why a section was kept, in a format a program can parse
+without scraping error text. Upstream is a general-purpose linker, so these
+live here as opt-in additions that leave normal links alone.
+
+## What is different from upstream
+
+Linking behaviour (all on by default or opt-in as noted; each came with tests):
+
+- `--section-ordering-file FILE`: place input sections at the start of their
+  output sections in the order a file lists them.
+- `-z mark-plt` / `-z nomark-plt` (x86-64, off by default): add the dynamic tags
+  that let glibc 2.39 or later rewrite PLT entries into direct jumps, and
+  put the PLT entry address in each jump-slot relocation.
+- Symbols named with `-u` or `--require-defined` that only a shared library
+  defines are now imported (`.dynsym` and `.gnu.version_r`), as GNU ld and lld
+  do.
+- `-z noseparate-relro` (opt-in): keep RELRO and the other writable data in one
+  segment instead of padding to a page boundary.
+- Output ordering closer to GNU ld and lld for `.gnu.version_d`, `.relr.dyn`,
+  merged constant sections and unwind tables.
+- In static executables, IRELATIVE relocations are ordered so an ifunc
+  resolver that calls another ifunc function (for example `strlen`, `memcpy`
+  from the C library) runs after that function is resolved.
+- A copy relocation is sized by the largest alias of the symbol, which fixes
+  old versioned data such as `sys_errlist`.
+
+Agent mode (opt-in, off by default): machine-readable output for scripts and
+tools that read the linker's output. See [Agent mode](#agent-mode).
+
+What is upstream's and what is ours: the linker itself, all other options,
+the 20 ELF targets and the Mach-O linker, the test runner and the man page are
+upstream's. The list above, the code behind agent mode (`elf/agent.rs` and its
+hooks in the driver, command-line parser and reports) and the tests named
+`tests/elf/agent-*.sh` are ours. With agent mode off, links and messages are
+meant to be unchanged from the code we forked from.
+
+## How it compares
+
+All comparisons below are against our own previous commit, not against
+upstream mold. We have no recorded head-to-head measurement against upstream
+mold 3.0.0, so this page makes no claim about speed or size relative to it.
+Upstream publishes its own benchmarks; see its project page.
+
+| What | Result | Method and source |
+|---|---|---|
+| Link speed with agent features present but off | Equal within noise: default link 175.7 ms before, 176.5 ms after (1.004x); `--gc-sections --icf=all` 172.7 before, 173.8 after (1.006x). A 0.4 to 0.6 percent slowdown, so not faster. | Link of 4,001 synthetic objects through the clang driver, interleaved runs of both builds, median of 16 each, 2026-10-14. Machine class not recorded. |
+| Link time (`--perf`) when all agent features were first added | 0.0685 s after against 0.069 s before | 80 alternating runs, median, 2026-10-13. Machine class not recorded. |
+| Output files with agent mode off | Same bytes (hashes of the hello-world link, the `--gc-sections --icf` link and both 4,001-object links match) | Hash comparison against the previous commit, 2026-10-14. |
+| Binary size (x86-64-only release build) | Larger by about 300 KB unstripped (5,208,112 to 5,508,240 bytes) and 252 KB stripped (4,008,064 to 4,260,536 bytes) after the first agent features. About 164 KB of that is the DWARF reader used to find source lines. | Sizes recorded when the features were added, 2026-10-13. Later agent-mode work was not re-measured for size. |
+
+Where we are slower, equal or have not measured:
+
+- Slower: the binary is bigger (above), and agent mode itself costs time when
+  switched on (it reads DWARF for line numbers and holds messages to sort them);
+  we did not record how much for a large link.
+- Equal: link speed with the new features off (above).
+- Not measured: speed and size against upstream mold 3.0.0 or against GNU ld,
+  gold and lld; targets other than x86-64.
+
+## Test results
+
+The integration suite is upstream's runner (`tests/`) with our tests added.
+On the x86-64 target it was run with agent mode off (`RUSTY_AGENT` must be
+unset, see below).
+
+`env -u RUSTY_AGENT cargo test --release -p mold --test integration -- --native` on a fresh
+clone of this repository (2026-10-15): **545 passed, 47 skipped, 1 failed** (593 tests). The
+skipped tests skip themselves (the suite decides per test; we did not break down why). The
+failing test is `lto-unclaimed`: it links with `clang -flto`, and the installed LLVM 22 linker
+plugin answers "Invalid bitcode signature". The notes record that it failed the same way on our fork before the
+agent-mode changes, so it is not caused by them; we did not run it against upstream's own tree.
+
+Reference points from the project notes: before the 2026-10-14 agent-mode fixes the same suite
+gave 537 passed, 47 skipped, 1 failed (the same test); the tests added since are ours
+(`tests/elf/agent-*.sh` and others for the options listed above). We have no recorded test
+count for upstream's own tree at the point we forked. Only x86-64 was run. The suite must be run
+with `RUSTY_AGENT` unset: with it set to 1 many tests see JSON where they expect text and fail.
+
+## Agent mode
+
+Agent mode is a feature for scripts and tools that read the linker's output.
+It is off unless you ask for it: `--agent-mode` on the command line, or
+`RUSTY_AGENT=1` in the environment. `--no-agent-mode` turns it off again, wherever
+it appears. With it off, nothing below is read, opened or written.
+
+- Switches on `--explain-undefined` (which library defines a missing symbol,
+  near-miss names, source lines of the references), `--explain-duplicates`
+  (source file and line of each definition), `--diagnostics-format=json` and
+  `--stable-diagnostics` (messages held back and sorted, so two runs print the
+  same text in the same order).
+- Output format: one JSON object per line, each starting with `"schema": 1` and a
+  `"type"` (`diagnostic`, `size-report`, `why`, `link-summary`, `command-line`).
+  Diagnostics carry stable codes (`L0001` undefined symbol, `L0002` duplicate
+  symbol, and so on) that do not depend on the message text.
+- Extra reports, each also usable alone: `--size-report`, `--why-kept` and
+  `--why-removed` (the reference chain behind a `--gc-sections` or `--icf`
+  decision), `--link-summary=FILE`, `--echo-command-line`.
+- Detail levels: `--agent-detail=brief|normal|full` or `RUSTY_AGENT_DETAIL`;
+  `normal` is the default. At `normal` and `brief` a size budget of 12 KB soft
+  and 20 KB hard applies to records on the error stream, with a final
+  `records-omitted` record saying what was left out.
+- Output channels: records go to standard error as always, and agent mode can
+  send a second clean copy to a file (`RUSTY_AGENT_OUT=path`) or an open
+  descriptor (`RUSTY_AGENT_FD=n`) so they do not get mixed with other text when a
+  caller merges the two streams. A bad value is a warning, never a failure.
+- `--agent-help` prints the options, record types, fields and codes as JSON.
+
+Example (one undefined symbol; `mold` here is the program built from this
+repository; the plain-text message is what you get without the variable):
+
+    $ RUSTY_AGENT=1 clang -fuse-ld=mold u.o -o u
+    {"schema":1,"type":"diagnostic","code":"L0001","severity":"error","message":"undefined symbol: missing_fn","locations":[{"object":"u.o","file":"u.c","function":"main"}]}
+
+    $ clang -fuse-ld=mold u.o -o u
+    mold: error: undefined symbol: missing_fn
+    >>> referenced by u.c
+    >>>               u.o:(main)
+
+Full description: the "Agent mode" section of [docs/mold.md](docs/mold.md).
+
+## Install
+
+The fork installs the same names as upstream: `mold`, `ld.mold`, `ld64.mold`,
+and the `ld` link GCC finds with `-B`. From source the default prefix is
+`/usr/local`, so it sits beside the system linker; GNU ld (`/usr/bin/ld`), gold
+and lld are not replaced. If a distribution package for `mold` is installed under `/usr/bin`, our package-style install
+would replace it, so use one or the other in the same prefix.
+
+Use it by name, per build, with no system change:
+
+    clang -fuse-ld=mold main.o -o main
+    gcc -B/usr/local/libexec/mold main.o -o main    # the `ld` link in that directory is mold
+
+(`-fuse-ld=mold` with clang, and `-B` with gcc, were tried on a hello-world link
+with the freshly built binary.)
+
+## Build and test
+
+Needs a Rust toolchain (edition 2024, `rust-version` 1.95 in `Cargo.toml`) and a
+C compiler for the test programs. x86-64 Linux is what we build and test.
+
+    cargo build --release --locked
+    ./install-mold.sh                      # PREFIX=/usr/local by default, DESTDIR supported
+    env -u RUSTY_AGENT cargo test --release -p mold --test integration -- --native
+
+The release build compiles every target and took 4 minutes 7 seconds with three
+jobs on a 12-thread machine (2026-10-15, fresh clone). The packaging notes record
+about 4 GB of memory at the default job count, so use `-j 2` on small machines.
+Some tests need `clang` and `gcc`; `install-test-deps.sh` lists the packages.
+
+## Known limits
+
+- Only x86-64 is built and tested here. The other 19 ELF targets and the Mach-O
+  linker come from upstream and were not rebuilt or tested by us.
+- `-z mark-plt` is x86-64 only and does nothing useful without a glibc that
+  supports PLT rewriting.
+- Agent mode: line numbers for references need a 64-bit RELA object compiled with
+  line tables; 32-bit and REL targets (i386, arm32) get none. At most 64 object
+  files are read for lines per link. Records are a draft format: fields can be
+  added without changing `schema`.
+- `--diagnostics-format` only changes messages printed after it on the command
+  line; `RUSTY_AGENT=1` is read before everything.
+- A bad `--agent-detail` is an error; a bad `RUSTY_AGENT_DETAIL` is ignored.
+- Link-time optimisation through the linker plugin depends on your LLVM version
+  (see the failing test noted under test results).
+
+## Licence and credit
+
+MIT, as upstream (see `LICENSE`). mold was created by Rui Ueyama and its
+contributors; their copyright notice stays in `LICENSE`. The additions in this
+fork are released under the same licence. This is a personal fork and is not
+affiliated with, or endorsed by, the upstream project.
